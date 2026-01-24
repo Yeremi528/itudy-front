@@ -4,8 +4,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Check,
   ChevronDown,
+  ChevronRight,
+  Code2,
   Cpu,
   Flame,
+  Globe,
   Lock,
   X,
   Zap
@@ -13,6 +16,7 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
   Easing,
@@ -29,6 +33,7 @@ import Svg, { Defs, Path, Pattern, Rect, Stop, LinearGradient as SvgLinearGradie
 
 import { useAuth } from '../../context/AuthContext';
 
+// --- INTERFACES ---
 interface Language {
   _id: string;
   code: string;
@@ -37,11 +42,16 @@ interface Language {
   isActive: boolean;
 }
 
+interface TechCourse {
+  tech: string;
+  levels: string[];
+}
+
 const { width } = Dimensions.get('window');
 const NODE_SIZE = 80; 
 const NODE_HEIGHT = 160; 
 
-// Componente de Fondo Tech (Grid)
+// --- COMPONENTE DE FONDO (REUTILIZABLE) ---
 const TechBackground = () => (
   <View style={StyleSheet.absoluteFill}>
     <LinearGradient
@@ -65,71 +75,148 @@ const TechBackground = () => (
 );
 
 export default function HomeScreen() {
-
-  const { user, signOut } = useAuth();
-  
+  const { user } = useAuth(); // Asumo que user tiene la propiedad .active o similar
   const router = useRouter();
+
+  // --- ESTADOS GENERALES ---
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  
+  // --- ESTADOS DE ONBOARDING ---
+  // Si user.active es null/false, iniciamos en onboardingStep 1, sino 0 (Home normal)
+  // NOTA: Ajusta la condición `!user?.active` según cómo venga exactamente tu backend (null vs false)
+  const [onboardingStep, setOnboardingStep] = useState(0); 
+  const [techOptions, setTechOptions] = useState<TechCourse[]>([]);
+  
+  // --- ESTADOS DEL MAPA (EXISTENTE) ---
   const [progress, setProgress] = useState<any>(null);
   const [selectedCourse, setSelectedCourse] = useState<any>(null);
-
-  const [languages, setLanguages] = useState<Language[]>([]); // Aquí cargas el array de tu API
+  const [languages, setLanguages] = useState<Language[]>([]); 
   const [selectedLang, setSelectedLang] = useState<Language | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
-
   const [data, setData] = useState<any[]>([]);
   const [nextID, setNextID] = useState("");
 
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
-  
-  // Animación mascota flotando
+  const [tech, setTech] = useState<string>("");
+  const [level, setLevel] = useState<string>("");
+
+  // --- ANIMACIONES ---
   const floatAnim = useRef(new Animated.Value(0)).current;
-  // Animación de pulso para el botón activo
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  // Animación de rotación para el anillo del botón activo
   const rotateAnim = useRef(new Animated.Value(0)).current;
 
-  const goToLesson = (ID: string, nextID: string) => {
-   
+  // 1. VERIFICACIÓN INICIAL DE USUARIO
+  useEffect(() => {
+    fetchLanguage()
 
+    if (user && ( user.courses_info?.active === null || user?.courses_info.active === '')) { 
+        setOnboardingStep(1); // Paso 1: Elegir Idioma
+        setIsInitialLoading(false);
+    } else {
+        // Usuario activo, cargamos normal
+        fetchLanguage();
+        // setIsInitialLoading se maneja en el fetch de cursos
+    }
+  }, [user]);
+
+  // --- FUNCIONES API ONBOARDING ---
+
+  // Paso 1: Ya tenemos fetchLanguage abajo, lo reusaremos.
+  
+  // Paso 2: Traer Tecnologías basadas en idioma
+  const fetchTechByLang = async (langCode: string) => {
+      const langCodeLower = langCode.toLowerCase();
+      try {
+          setIsInitialLoading(true);
+          // API del Screenshot
+          const response = await axios.get(`http://0.0.0.0:4518/courses?lang=${langCodeLower}`);
+          if (response.data) {
+              setTechOptions(response.data);
+              setOnboardingStep(2); 
+          }
+      } catch (err) {
+          Alert.alert("Error", "No pudimos cargar los cursos disponibles.");
+      } finally {
+          setIsInitialLoading(false);
+      }
+  };
+
+  const handleLevelSelection = async (tech: string, level: string) => {
+    const levelLower = level.toLowerCase().trim();
+    const techLower = tech.toLowerCase().trim();
+    setTech(techLower);
+    setLevel(levelLower);
+    if (levelLower === 'junior') {
+        // Lógica de éxito para JUNIOR
+        
+        const successAction = () => {
+            setOnboardingStep(0); // Vuelve al Home
+        };
+
+        if (Platform.OS === 'web') {
+            // SOLUCIÓN PARA WEB: Usamos window.confirm nativo del navegador
+            // window.confirm devuelve true si el usuario da "Aceptar"
+            const userAccepted = window.confirm(`¡Bienvenido! Comenzando ruta ${tech} nivel Junior`);
+            if (userAccepted) {
+                successAction();
+            }
+        } else {
+            // SOLUCIÓN PARA MÓVIL (iOS/Android): Tu Alert original
+            Alert.alert("¡Bienvenido!", `Comenzando ruta ${tech} nivel Junior`, [
+                { 
+                    text: "Dale con todo", 
+                    onPress: successAction
+                }
+            ]);
+        }
+
+    } else {
+        // CASO SENIOR / SEMI: Redirección
+        router.push("/(tabs)/certificate");
+    }
+};
+  // --- FUNCIONES EXISTENTES (MAPA) ---
+  const goToLesson = (ID: string, nextID: string) => {
     const idAsString = String(ID);
     setSelectedCourse(null)
     router.navigate({
       pathname: "/lesson",
       params: { 
           id: idAsString,
-          courseId: "golang_junior",       // ID del curso (ajusta si lo tienes en una variable)
-          userId: "6935a4e723d8a99e2c9d3c32", // ID de usuario "en duro"
+          courseId: "golang_junior",       
+          userId: "6935a4e723d8a99e2c9d3c32",
           nextLessonId: nextID
-
       }
-  });
-};
-const fetchLanguage = async () => {
-  try {
-    const response  = await axios.get("http://0.0.0.0:4518/courses/languages");
-    if (response.data){
-        setLanguages(response.data);
-    }
-  }catch(err){
-    console.error("Error fetching language", err);
-  }
-}
-useEffect(() => {
-  fetchLanguage();
-}, []);
-const fetchProgress = async () => {
+    });
+  };
+
+  const fetchLanguage = async () => {
     try {
-      // OJO: NO pongas setIsInitialLoading(true) aquí. 
-      // Queremos que el usuario siga viendo el mapa mientras esto se actualiza en "segundo plano".
+      // CAMBIO IMPORTANTE: Usa localhost en lugar de 0.0.0.0 para web
+      const response = await axios.get("http://localhost:4518/courses/languages");
       
-      const PROGRESS_URL = `http://0.0.0.0:4518/lessons?userID=${user?._id}&courseID=golang_junior`;
       
-      // Axios no bloquea la UI, así que las animaciones seguirán corriendo
+      if (response.data && response.data.length > 0) {
+          setLanguages(response.data);
+      } else {
+          console.warn("La API devolvió un array vacío");
+      }
+    } catch(err) {
+      // TIP: Si falla la API, usa datos falsos para que no te quedes trabado diseñando
+      setLanguages([
+          { _id: '1', code: 'es', name: 'Español', flag: '🇪🇸', isActive: true },
+          { _id: '2', code: 'en', name: 'Inglés', flag: '🇺🇸', isActive: true },
+      ]);
+    }
+  }
+
+  const fetchProgress = async () => {
+    
+    if (!user?.id) return;
+    try {
+      
+      const PROGRESS_URL = `http://0.0.0.0:4518/lessons?userID=${user?.id}&courseID=golang_junior`;
       const response = await axios.get(PROGRESS_URL); 
-      
       if (response.data) {
-        // Al actualizar el estado, React solo re-renderizará los componentes que cambiaron (los candados/colores)
-        // Sin desmontar todo el árbol, por lo que la animación de la mascota NO se reinicia.
         setProgress(response.data);
       }
     } catch (error) {
@@ -137,55 +224,81 @@ const fetchProgress = async () => {
     }
   };
 
+  const createProgress = async () => {
+    if (!user?.id) return;
+    try {
+    
+      const CREATE_PROGRESS_URL = `http://0.0.0.0:4518/lessons`;
+
+
+      const firstCourse = data[0]?.course_id || '';
+
+      const firstLesson = {
+        id:`lesson_${user?.id}_${tech}_${level}`,
+        user_id: user?.id,
+        course_id: `${tech}_${level}`,
+        last_lesson_id: firstCourse,
+        lessons_progress: {
+          firstCourse: { status: "active" }
+        },
+      }
+      await axios.post(CREATE_PROGRESS_URL, firstLesson );
+      setProgress(firstLesson);
+    }  catch (error) {
+      console.log("Error creating progress", error);
+    }
+  }
   useFocusEffect(
     useCallback(() => {
-      // Llamamos a la función sin bloquear la UI
-      fetchProgress();
-    }, [])
+        if (onboardingStep === 0 && data.length !== 0){
+          if (user?.id && ( user.courses_info?.active === null || user?.courses_info.active === '' )){
+            console.log("Creating progress for new user...");
+            createProgress()
+          }else {
+            console.log("Fetching progress for existing user...");
+            fetchProgress();
+          }
+        } 
+    }, [onboardingStep])
   );
 
-
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
+    // Animaciones
+    Animated.loop(Animated.sequence([
         Animated.timing(floatAnim, { toValue: -10, duration: 2000, useNativeDriver: Platform.OS !== 'web' }),
         Animated.timing(floatAnim, { toValue: 0, duration: 2000, useNativeDriver: Platform.OS !== 'web' })
-      ])
-    ).start();
-  
-    Animated.loop(
-      Animated.sequence([
+    ])).start();
+    Animated.loop(Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.1, duration: 800, useNativeDriver: Platform.OS !== 'web' }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: Platform.OS !== 'web' })
-      ])
-    ).start();
-    
-    Animated.loop(
-      Animated.timing(rotateAnim, {
-        toValue: 1,
-        duration: 3000,
-        easing: Easing.linear,
-        useNativeDriver: Platform.OS !== 'web'
-      })
-    ).start();
-    const fetchCourses = async () => {
-      try {
-        const API_URL = "http://0.0.0.0:4518/courses/byID?lv=junior&lang=es&tech=Golang"; 
-        const response = await axios.get(API_URL); 
-        if (response.data && response.data.courses) {
-            setData(response.data.courses);
-        }
-      } catch (error) {
-        console.error("Error loading courses", error);
-      } finally {
-        // SOLO AQUÍ quitamos la pantalla de carga inicial
-        setIsInitialLoading(false);
-      }
-    };
+    ])).start();
+    Animated.loop(Animated.timing(rotateAnim, {
+        toValue: 1, duration: 3000, easing: Easing.linear, useNativeDriver: Platform.OS !== 'web'
+    })).start();
+  }, []);
 
-    fetchCourses();
-
-  }, [languages]);
+  useEffect(() => {
+    if (onboardingStep === 0) {
+        const fetchCourses = async () => {
+          const languagesCodeLower = selectedLang?.code.toLowerCase() || 'es';
+          try {
+            // Nota: Aquí pasamos 'languages' (el array) en tu código original, 
+            // pero probablemente deberías pasar selectedLang.code o similar.
+            // Lo dejo como estaba en tu original para no romper, pero ojo ahí.
+            const API_URL = `http://0.0.0.0:4518/courses/byID?lv=junior&lang=${languagesCodeLower}&tech=Golang`; 
+            const response = await axios.get(API_URL); 
+            if (response.data && response.data.courses) {
+                setData(response.data.courses);
+            }
+          } catch (error) {
+            console.error("Error loading courses", error);
+          } finally {
+            setIsInitialLoading(false);
+          }
+        };
+        fetchCourses();
+    }
+  }, [languages, selectedLang, onboardingStep]);
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -197,85 +310,174 @@ const fetchProgress = async () => {
     return pattern[index % 4];
   };
 
+  // --- RENDERIZADO CONDICIONAL ---
+
   if (isInitialLoading) {
     return (
        <View style={styles.loadingContainer}>
+          <TechBackground />
           <ActivityIndicator size="large" color="#22d3ee" />
+          <Text style={[styles.loadingText, {marginTop: 20}]}>Sincronizando...</Text>
        </View>
     );
- }
+  }
 
+  // --- VISTA ONBOARDING PASO 1: IDIOMA ---
+  if (onboardingStep === 1) {
+      return (
+        <View style={styles.container}>
+            <TechBackground />
+            <SafeAreaView style={{ flex: 1, padding: 24 }}>
+                <View style={styles.onboardingHeader}>
+                    <Globe color="#22d3ee" size={48} />
+                    <Text style={styles.onboardingTitle}>Hola, Dev.</Text>
+                    <Text style={styles.onboardingSubtitle}>Para empezar, ¿en qué idioma prefieres aprender?</Text>
+                </View>
+
+                <ScrollView contentContainerStyle={{ gap: 16 }}>
+                    {languages.map((lang) => (
+                        <TouchableOpacity 
+                            key={lang._id} 
+                            style={styles.cardSelect}
+                            onPress={() => {
+                                setSelectedLang(lang);
+                                fetchTechByLang(lang?.code);
+                            }}
+                        >
+                            <Text style={{fontSize: 32}}>{lang.flag}</Text>
+                            <Text style={styles.cardSelectText}>{lang.name}</Text>
+                            <ChevronRight color="#38bdf8" />
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </SafeAreaView>
+        </View>
+      );
+  }
+
+  // --- VISTA ONBOARDING PASO 2: TECH & NIVEL ---
+  if (onboardingStep === 2) {
+    return (
+      <View style={styles.container}>
+          <TechBackground />
+          <SafeAreaView style={{ flex: 1, padding: 24 }}>
+              <TouchableOpacity onPress={() => setOnboardingStep(1)} style={{marginBottom: 20}}>
+                  <Text style={{color: '#94a3b8'}}>← Volver</Text>
+              </TouchableOpacity>
+
+              <View style={styles.onboardingHeader}>
+                  <Code2 color="#f472b6" size={48} />
+                  <Text style={styles.onboardingTitle}>Elige tu Stack</Text>
+                  <Text style={styles.onboardingSubtitle}>
+                    Selecciona la tecnología y tu nivel actual para personalizar tu ruta.
+                  </Text>
+              </View>
+
+              <ScrollView contentContainerStyle={{ gap: 24, paddingBottom: 40 }}>
+                  {techOptions.map((item, index) => (
+                      <View key={index} style={styles.techCard}>
+                          <LinearGradient
+                              colors={['rgba(30, 41, 59, 0.8)', 'rgba(15, 23, 42, 0.9)']}
+                              style={styles.techCardGradient}
+                          >
+                            <View style={styles.techTitleRow}>
+                                <Cpu color="#fff" size={24} />
+                                <Text style={styles.techTitle}>{item.tech}</Text>
+                            </View>
+                            
+                            <View style={styles.divider} />
+                            
+                            <Text style={styles.levelLabel}>Selecciona tu nivel:</Text>
+                            <View style={styles.levelContainer}>
+                                {item.levels.map((level) => {
+                                    // Estilos dinámicos según nivel
+                                    let btnColor = '#38bdf8'; // Default Junior (Cyan)
+                                    if(level === 'semi-senior') btnColor = '#fbbf24'; // Amber
+                                    if(level === 'senior') btnColor = '#f87171'; // Red
+
+                                    return (
+                                        <TouchableOpacity 
+                                            key={level}
+                                            style={[styles.levelButton, { borderColor: btnColor }]}
+                                            onPress={() => handleLevelSelection(item.tech, level)}
+                                        >
+                                            <View style={[styles.levelDot, { backgroundColor: btnColor }]} />
+                                            <Text style={styles.levelText}>{level.charAt(0).toUpperCase() + level.slice(1)}</Text>
+                                        </TouchableOpacity>
+                                    )
+                                })}
+                            </View>
+                          </LinearGradient>
+                      </View>
+                  ))}
+              </ScrollView>
+          </SafeAreaView>
+      </View>
+    );
+  }
+
+  // --- VISTA PRINCIPAL (MAPA) ---
   return (
     <View style={styles.container}>
-      {/* Nuevo Fondo Tecnológico */}
       <TechBackground />
-      
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        {/* HEADER */}
+        {/* HEADER (Mismo código original) */}
         <View style={styles.header}>
-    {/* Botón de Idioma Dinámico */}
-    <TouchableOpacity 
-        style={styles.langButton}
-        onPress={() => setIsModalVisible(true)}
-    >
-        {/* Mostramos la bandera y el código del idioma seleccionado */}
-        <Text style={{ fontSize: 16 }}>{selectedLang?.flag || '🌐'}</Text>
-        <Text style={styles.langText}>{selectedLang?.code || '...'}</Text>
-        <ChevronDown color="#38bdf8" size={12} />
-    </TouchableOpacity>
-    
-    <View style={styles.statsContainer}>
-        <View style={styles.statItem}>
-            <Flame color="#f97316" fill="#f97316" size={16} />
-            <Text style={[styles.statText, { color: '#f97316' }]}>12</Text>
-        </View>
-    </View>
-
-    {/* Modal de Selección (Duolingo Style) */}
-    <Modal
-        visible={isModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setIsModalVisible(false)}
-    >
-        <TouchableOpacity 
-            style={styles.modalOverlay} 
-            activeOpacity={1} 
-            onPress={() => setIsModalVisible(false)}
-        >
-            <View style={styles.modalContent}>
-                <View style={styles.modalHandlel} />
-                <Text style={styles.modalTitle}>Selecciona un idioma</Text>
-                
-                {languages.map((item) => (
-                    <TouchableOpacity
-                        key={item._id}
-                        style={[
-                            styles.langOption,
-                            selectedLang?.code === item.code && styles.langOptionSelected
-                        ]}
-                        onPress={() => {
-                            setSelectedLang(item);
-                            setIsModalVisible(false);
-                            // Aquí llamarías a tu API de cursos filtrando por item.code
-                        }}
-                    >
-                        <Text style={styles.optionFlag}>{item.flag}</Text>
-                        <Text style={styles.optionText}>{item.name}</Text>
-                        {selectedLang?.code === item.code && (
-                            <View style={styles.checkDot} />
-                        )}
-                    </TouchableOpacity>
-                ))}
+            <TouchableOpacity 
+                style={styles.langButton}
+                onPress={() => setIsModalVisible(true)}
+            >
+                <Text style={{ fontSize: 16 }}>{selectedLang?.flag || '🌐'}</Text>
+                <Text style={styles.langText}>{selectedLang?.code || '...'}</Text>
+                <ChevronDown color="#38bdf8" size={12} />
+            </TouchableOpacity>
+            
+            <View style={styles.statsContainer}>
+                <View style={styles.statItem}>
+                    <Flame color="#f97316" fill="#f97316" size={16} />
+                    <Text style={[styles.statText, { color: '#f97316' }]}>12</Text>
+                </View>
             </View>
-        </TouchableOpacity>
-    </Modal>
-</View>
 
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent} 
-          showsVerticalScrollIndicator={false}
-        >
+            {/* Modal Selección Idioma (Home) */}
+            <Modal
+                visible={isModalVisible}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setIsModalVisible(false)}
+            >
+                <TouchableOpacity 
+                    style={styles.modalOverlay} 
+                    activeOpacity={1} 
+                    onPress={() => setIsModalVisible(false)}
+                >
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHandlel} />
+                        <Text style={styles.modalTitle}>Cambiar idioma</Text>
+                        {languages.map((item) => (
+                            <TouchableOpacity
+                                key={item._id}
+                                style={[
+                                    styles.langOption,
+                                    selectedLang?.code === item.code && styles.langOptionSelected
+                                ]}
+                                onPress={() => {
+                                    setSelectedLang(item);
+                                    setIsModalVisible(false);
+                                }}
+                            >
+                                <Text style={styles.optionFlag}>{item.flag}</Text>
+                                <Text style={styles.optionText}>{item.name}</Text>
+                                {selectedLang?.code === item.code && <View style={styles.checkDot} />}
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+        </View>
+
+        {/* MAPA DE CURSOS (Mismo código original) */}
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.titleContainer}>
             <View style={styles.chipContainer}>
                 <Cpu size={12} color="#22d3ee" />
@@ -285,42 +487,26 @@ const fetchProgress = async () => {
           </View>
 
           <View style={styles.mapContainer}>
-            {/* SIN LÍNEAS SVG - Solo Nodos Flotantes */}
-
             {data.length > 0 ? (
                 data.map((course, index) => {
                   const currentID = course.course_id; 
-
-                  // CORRECCIÓN 2: Calculamos el siguiente ID usando el índice actual (sin recorrer todo el array de nuevo)
-                  // Si existe un elemento en index + 1, tomamos su ID.
-                  // Si no existe (es el último del array), repetimos el ID actual.
                   const nextCourse = data[index + 1];
                   const nextID = nextCourse ? nextCourse.course_id : currentID;
-                  // Recuperamos el progreso usando el ID correcto
                   const userLessonData = progress?.lessons_progress?.[currentID];
-
-                  // Lógica de estado
                   const currentStatus = userLessonData ? userLessonData.status : 'locked';
-                  
                   const isActive = currentStatus === 'active' || progress?.last_lesson_id === currentID;
                   const isCompleted = currentStatus === 'completed';
                   const isLocked = !isActive && !isCompleted;
-
                   const pos = getPosition(index);
-                  
-               
                   
                   let alignSelf: 'center' | 'flex-start' | 'flex-end' = 'center';
                   if (pos === 'left') alignSelf = 'flex-start';
                   if (pos === 'right') alignSelf = 'flex-end';
-
                   const paddingLeft = pos === 'left' ? width * 0.2 : 0;
                   const paddingRight = pos === 'right' ? width * 0.2 : 0;
+                  
                   return (
                     <View key={course.course_id}>
-                        
-                      
-
                       <View style={[styles.nodeRow, { justifyContent: alignSelf }]}>
                          <View style={{ 
                              marginLeft: pos === 'left' ? paddingLeft : 0, 
@@ -328,27 +514,18 @@ const fetchProgress = async () => {
                              alignItems: 'center',
                              width: NODE_SIZE + 40, 
                          }}>
-                            
-                            {/* Wrapper del Botón con Animaciones si es Activo */}
-                            <Animated.View 
-                                style={{ 
-                                    transform: isActive ? [{ scale: pulseAnim }] : [] 
-                                }}
-                            >
-                                {/* Anillo Giratorio para el Activo */}
+                            <Animated.View style={{ transform: isActive ? [{ scale: pulseAnim }] : [] }}>
                                 {isActive && (
                                     <Animated.View style={[styles.activeRing, { transform: [{ rotate: spin }] }]} />
                                 )}
-
                                 <TouchableOpacity
                                   activeOpacity={0.8}
                                   onPress={() =>{
                                     if (!isLocked) {
                                       setSelectedCourse(course);
                                       setNextID(nextID); 
-                                  }
-                              }
-                                  } 
+                                    }
+                                  }} 
                                   disabled={isLocked}
                                   style={[
                                     styles.nodeButton,
@@ -364,8 +541,6 @@ const fetchProgress = async () => {
                                    )}
                                 </TouchableOpacity>
                             </Animated.View>
-
-                            {/* Etiqueta del Nivel */}
                             <View style={[
                                 styles.labelContainer, 
                                 isActive && styles.labelContainerActive,
@@ -375,21 +550,19 @@ const fetchProgress = async () => {
                                     {course.title}
                                 </Text>
                             </View>
-                            
                          </View>
                       </View>
                     </View>
                   );
                 })
             ) : (
-                <Text style={styles.loadingText}>Cargando datos del servidor o usando Mock...</Text>
+                <Text style={styles.loadingText}>Cargando mapa...</Text>
             )}
           </View>
-          
           <View style={{height: 100}} /> 
         </ScrollView>
 
-        {/* MODAL */}
+        {/* MODAL CURSO SELECCIONADO */}
         <Modal
           animationType="fade"
           transparent={true}
@@ -398,15 +571,9 @@ const fetchProgress = async () => {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <LinearGradient 
-                colors={['#0891b2', '#0f172a']} 
-                style={styles.modalHeader}
-              >
+              <LinearGradient colors={['#0891b2', '#0f172a']} style={styles.modalHeader}>
                 <Text style={{fontSize: 60}}>{selectedCourse?.icon}</Text>
-                <TouchableOpacity 
-                  style={styles.closeButton} 
-                  onPress={() => setSelectedCourse(null)}
-                >
+                <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedCourse(null)}>
                   <X color="white" size={24} />
                 </TouchableOpacity>
               </LinearGradient>
@@ -427,73 +594,165 @@ const fetchProgress = async () => {
   );
 }
 
+// --- STYLES NUEVOS & VIEJOS ---
 const styles = StyleSheet.create({
+  // ... Styles de Onboarding Nuevos ...
+  onboardingHeader: {
+      marginBottom: 30,
+      marginTop: 20
+  },
+  onboardingTitle: {
+      color: 'white',
+      fontSize: 32,
+      fontWeight: '800',
+      marginTop: 10
+  },
+  onboardingSubtitle: {
+      color: '#94a3b8',
+      fontSize: 16,
+      marginTop: 8,
+      lineHeight: 24
+  },
+  cardSelect: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(30, 41, 59, 0.6)',
+      padding: 20,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: 'rgba(56, 189, 248, 0.2)',
+      marginBottom: 10
+  },
+  cardSelectText: {
+      color: 'white',
+      fontSize: 18,
+      fontWeight: '600',
+      flex: 1,
+      marginLeft: 15
+  },
+  techCard: {
+      borderRadius: 20,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: 'rgba(56, 189, 248, 0.3)',
+  },
+  techCardGradient: {
+      padding: 20,
+  },
+  techTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginBottom: 15
+  },
+  techTitle: {
+      color: 'white',
+      fontSize: 24,
+      fontWeight: 'bold'
+  },
+  divider: {
+      height: 1,
+      backgroundColor: 'rgba(255,255,255,0.1)',
+      marginBottom: 15
+  },
+  levelLabel: {
+      color: '#94a3b8',
+      fontSize: 14,
+      marginBottom: 12
+  },
+  levelContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10
+  },
+  levelButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: 100,
+      borderWidth: 1,
+      backgroundColor: 'rgba(0,0,0,0.3)',
+      gap: 6
+  },
+  levelDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4
+  },
+  levelText: {
+      color: '#e2e8f0',
+      fontWeight: '600',
+      fontSize: 13
+  },
+
+  // ... Styles Originales mantenidos abajo ...
   langButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1f2937', // Un tono más claro que el fondo
+    backgroundColor: '#1f2937', 
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 12,
     gap: 6,
     borderWidth: 1,
     borderColor: '#374151',
-},
-langText: {
+  },
+  langText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
-},
-modalOverlayl: {
+  },
+  modalOverlayl: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
-},
-modalContentl: {
+  },
+  modalContentl: {
     backgroundColor: '#131F24',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
     minHeight: 350,
-},
-modalHandlel: {
+  },
+  modalHandlel: {
     width: 40,
     height: 4,
     backgroundColor: '#37464F',
     borderRadius: 2,
     alignSelf: 'center',
     marginBottom: 20,
-},
-modalTitlel: {
+  },
+  modalTitlel: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
     textAlign: 'center'
-},
-langOption: {
+  },
+  langOption: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 15,
     borderRadius: 15,
     marginBottom: 8,
-},
-langOptionSelected: {
+  },
+  langOptionSelected: {
     backgroundColor: 'rgba(56, 189, 248, 0.1)',
     borderWidth: 1,
     borderColor: '#38bdf8',
-},
-optionFlag: { fontSize: 24, marginRight: 15 },
-optionText: { color: '#fff', fontSize: 16, flex: 1 },
-checkDot: {
+  },
+  optionFlag: { fontSize: 24, marginRight: 15 },
+  optionText: { color: '#fff', fontSize: 16, flex: 1 },
+  checkDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
     backgroundColor: '#38bdf8',
-},
+  },
   container: {
     flex: 1,
-    backgroundColor: '#020617', // Fallback
+    backgroundColor: '#020617', 
   },
   loadingText: {
       color: '#94a3b8',
@@ -505,25 +764,9 @@ checkDot: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: 'rgba(2, 6, 23, 0.5)', // Semi transparente
+    backgroundColor: 'rgba(2, 6, 23, 0.5)', 
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(56, 189, 248, 0.1)',
-  },
-  langButtonl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.2)'
-  },
-  langTextl: {
-    color: '#38bdf8', // Sky Blue
-    marginLeft: 6,
-    fontWeight: 'bold',
-    fontSize: 12
   },
   statsContainer: {
     flexDirection: 'row',
@@ -585,11 +828,10 @@ checkDot: {
     alignItems: 'center',
     zIndex: 10,
   },
-  // ESTILOS DE BOTONES ACTUALIZADOS
   nodeButton: {
     width: NODE_SIZE,
     height: NODE_SIZE,
-    borderRadius: 20, // Más cuadrado (Squircle tech)
+    borderRadius: 20, 
     justifyContent: 'center',
     alignItems: 'center',
     borderBottomWidth: 0,
@@ -631,7 +873,6 @@ checkDot: {
     borderWidth: 2,
     shadowColor: '#000',
   },
-  // Etiquetas
   labelContainer: {
     marginTop: 12,
     paddingHorizontal: 12,
@@ -658,41 +899,6 @@ checkDot: {
   nodeLabelLocked: {
     color: '#475569',
   },
-  
-  // MASCOTA
-  mascotContainer: {
-    position: 'absolute',
-    left: 20, 
-    top: NODE_HEIGHT * 0.8, 
-    zIndex: 5,
-    alignItems: 'center',
-  },
-  mascotGlow: {
-      position: 'absolute',
-      width: 60,
-      height: 60,
-      borderRadius: 30,
-      backgroundColor: '#22d3ee',
-      opacity: 0.2,
-      transform: [{ scale: 1.5 }],
-  },
-  speechBubble: {
-      position: 'absolute',
-      top: -25,
-      left: 30,
-      backgroundColor: '#22d3ee',
-      paddingVertical: 4,
-      paddingHorizontal: 10,
-      borderRadius: 12,
-      borderBottomLeftRadius: 0,
-  },
-  speechText: {
-      fontSize: 10,
-      fontWeight: 'bold',
-      color: '#020617'
-  },
-
-  // MODAL
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.9)',
@@ -721,7 +927,7 @@ checkDot: {
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#020617', // Mismo color de fondo que tu app
+    backgroundColor: '#020617', 
     justifyContent: 'center',
     alignItems: 'center',
   },

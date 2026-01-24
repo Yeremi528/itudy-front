@@ -16,13 +16,27 @@ type UserStats = {
   current_league: string;
 };
 
+export type EnrolledCourse = {
+  id: string;          
+  name?: string;       
+  progress?: number;   
+  is_completed?: boolean;
+};
+
+export type UserCoursesInfo = {
+  active: string;            
+  list: EnrolledCourse[];    
+};
+
 // Define el usuario completo basándonos en tu captura de MongoDB
 export type User = {
-  _id: string;           // MongoDB siempre devuelve un _id
+  id: string;           // MongoDB siempre devuelve un _id
   name: string;
   email: string;
   picture?: string;      // Opcional: Google la da, pero tu DB aún no la guarda en la captura
   token?: string;        // Opcional: Para tus peticiones al backend (si el backend lo devuelve aparte)
+  
+  courses_info: UserCoursesInfo;
   
   country: string;
   native_language: string;
