@@ -75,17 +75,19 @@ const TechBackground = () => (
 );
 
 export default function HomeScreen() {
-  const { user } = useAuth(); // Asumo que user tiene la propiedad .active o similar
+  const { user, updateUserData } = useAuth(); // Asumo que user tiene la propiedad .active o similar
   const router = useRouter();
 
   // --- ESTADOS GENERALES ---
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   
+
   // --- ESTADOS DE ONBOARDING ---
   // Si user.active es null/false, iniciamos en onboardingStep 1, sino 0 (Home normal)
   // NOTA: Ajusta la condición `!user?.active` según cómo venga exactamente tu backend (null vs false)
   const [onboardingStep, setOnboardingStep] = useState(0); 
   const [techOptions, setTechOptions] = useState<TechCourse[]>([]);
+  const [firstLesson, setFirstLesson] = useState<any>(false);
   
   // --- ESTADOS DEL MAPA (EXISTENTE) ---
   const [progress, setProgress] = useState<any>(null);
@@ -96,9 +98,7 @@ export default function HomeScreen() {
   const [data, setData] = useState<any[]>([]);
   const [nextID, setNextID] = useState("");
 
-  const [tech, setTech] = useState<string>("");
-  const [level, setLevel] = useState<string>("");
-
+ 
   // --- ANIMACIONES ---
   const floatAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -109,18 +109,12 @@ export default function HomeScreen() {
     fetchLanguage()
 
     if (user && ( user.courses_info?.active === null || user?.courses_info.active === '')) { 
+        setFirstLesson(true)
         setOnboardingStep(1); // Paso 1: Elegir Idioma
         setIsInitialLoading(false);
-    } else {
-        // Usuario activo, cargamos normal
-        fetchLanguage();
-        // setIsInitialLoading se maneja en el fetch de cursos
     }
-  }, [user]);
+  }, []);
 
-  // --- FUNCIONES API ONBOARDING ---
-
-  // Paso 1: Ya tenemos fetchLanguage abajo, lo reusaremos.
   
   // Paso 2: Traer Tecnologías basadas en idioma
   const fetchTechByLang = async (langCode: string) => {
@@ -143,13 +137,15 @@ export default function HomeScreen() {
   const handleLevelSelection = async (tech: string, level: string) => {
     const levelLower = level.toLowerCase().trim();
     const techLower = tech.toLowerCase().trim();
-    setTech(techLower);
-    setLevel(levelLower);
+
+
     if (levelLower === 'junior') {
         // Lógica de éxito para JUNIOR
         
         const successAction = () => {
-            setOnboardingStep(0); // Vuelve al Home
+            updateUserProgress(techLower, levelLower);
+            setOnboardingStep(0); 
+            
         };
 
         if (Platform.OS === 'web') {
@@ -169,52 +165,46 @@ export default function HomeScreen() {
             ]);
         }
 
-    } else {
-        // CASO SENIOR / SEMI: Redirección
-        router.push("/(tabs)/certificate");
-    }
+    } // Agregar else con redirreción
 };
   // --- FUNCIONES EXISTENTES (MAPA) ---
   const goToLesson = (ID: string, nextID: string) => {
+    const [tech, level] = user?.courses_info?.active?.split('_') || [];
+
     const idAsString = String(ID);
     setSelectedCourse(null)
     router.navigate({
       pathname: "/lesson",
       params: { 
           id: idAsString,
-          courseId: "golang_junior",       
-          userId: "6935a4e723d8a99e2c9d3c32",
+          courseId: `${tech}_${level}`,       
+          userId: user?.id,
           nextLessonId: nextID
       }
     });
   };
 
+ 
+
   const fetchLanguage = async () => {
     try {
-      // CAMBIO IMPORTANTE: Usa localhost en lugar de 0.0.0.0 para web
       const response = await axios.get("http://localhost:4518/courses/languages");
-      
-      
       if (response.data && response.data.length > 0) {
           setLanguages(response.data);
       } else {
           console.warn("La API devolvió un array vacío");
       }
-    } catch(err) {
-      // TIP: Si falla la API, usa datos falsos para que no te quedes trabado diseñando
-      setLanguages([
-          { _id: '1', code: 'es', name: 'Español', flag: '🇪🇸', isActive: true },
-          { _id: '2', code: 'en', name: 'Inglés', flag: '🇺🇸', isActive: true },
-      ]);
+    } catch (error) {
+      console.error("Error fetching languages:", error);
     }
   }
 
   const fetchProgress = async () => {
     
     if (!user?.id) return;
+    const [tech, level] = user?.courses_info?.active?.split('_') || [];
     try {
-      
-      const PROGRESS_URL = `http://0.0.0.0:4518/lessons?userID=${user?.id}&courseID=golang_junior`;
+      const PROGRESS_URL = `http://0.0.0.0:4518/lessons?userID=${user?.id}&courseID=${tech}_${level}`;
       const response = await axios.get(PROGRESS_URL); 
       if (response.data) {
         setProgress(response.data);
@@ -224,22 +214,51 @@ export default function HomeScreen() {
     }
   };
 
-  const createProgress = async () => {
+  const updateUserProgress = async (tech: string, level: string) => {
     if (!user?.id) return;
+    if (!firstLesson) return; // Asumo que esto viene de props o estado local
+
     try {
-    
+      // OJO: 0.0.0.0 no suele funcionar en Android Emulator, usa 10.0.2.2 o tu IP local
+      const UPDATE_PROGRESS_URL = `http://0.0.0.0:4518/user`; 
+
+      const newCoursesInfo = {
+          active: `${tech}_${level}`,
+          list: [{ id: `${tech}_${level}` }] // Asegúrate de manejar la lógica de agregar a la lista, no reemplazarla toda si ya tenías cursos
+      };
+
+      const payload = {
+        id: user.id,        
+        courses_info: newCoursesInfo,
+      };
+
+      // 1. Actualizar en Backend
+      await axios.put(UPDATE_PROGRESS_URL, payload);
+
+      // 2. Actualizar en Contexto Global + AsyncStorage
+      // Aquí solo pasas la parte que cambió
+      await updateUserData({ courses_info: newCoursesInfo as any }); 
+      
+
+  } catch (error) {
+    console.log("Error updating user progress", error);
+  }
+}
+  const createProgress = async (tech:string,level:string, firstCourse:string) => {
+    if (!user?.id) return;
+    if (!firstLesson) return;
+
+    try {
       const CREATE_PROGRESS_URL = `http://0.0.0.0:4518/lessons`;
 
-
-      const firstCourse = data[0]?.course_id || '';
-
+      console.log(firstCourse,"first Course")
       const firstLesson = {
         id:`lesson_${user?.id}_${tech}_${level}`,
         user_id: user?.id,
         course_id: `${tech}_${level}`,
         last_lesson_id: firstCourse,
         lessons_progress: {
-          firstCourse: { status: "active" }
+          [firstCourse]: { status: "active" }
         },
       }
       await axios.post(CREATE_PROGRESS_URL, firstLesson );
@@ -248,18 +267,11 @@ export default function HomeScreen() {
       console.log("Error creating progress", error);
     }
   }
+
   useFocusEffect(
     useCallback(() => {
-        if (onboardingStep === 0 && data.length !== 0){
-          if (user?.id && ( user.courses_info?.active === null || user?.courses_info.active === '' )){
-            console.log("Creating progress for new user...");
-            createProgress()
-          }else {
-            console.log("Fetching progress for existing user...");
-            fetchProgress();
-          }
-        } 
-    }, [onboardingStep])
+        if (onboardingStep === 0)   fetchProgress();
+    }, [onboardingStep,data])
   );
 
   useEffect(() => {
@@ -278,17 +290,22 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    if (onboardingStep === 0) {
+    if (onboardingStep === 0 && user?.courses_info?.active != "") {
         const fetchCourses = async () => {
           const languagesCodeLower = selectedLang?.code.toLowerCase() || 'es';
           try {
-            // Nota: Aquí pasamos 'languages' (el array) en tu código original, 
-            // pero probablemente deberías pasar selectedLang.code o similar.
-            // Lo dejo como estaba en tu original para no romper, pero ojo ahí.
-            const API_URL = `http://0.0.0.0:4518/courses/byID?lv=junior&lang=${languagesCodeLower}&tech=Golang`; 
+            const [tech, level] = user?.courses_info?.active?.split('_') || [];
+            const API_URL = `http://0.0.0.0:4518/courses/byID?lv=${level}&lang=${languagesCodeLower}&tech=${tech}`; 
             const response = await axios.get(API_URL); 
             if (response.data && response.data.courses) {
                 setData(response.data.courses);
+            }
+
+            if (firstLesson){
+              const firstCourse = response?.data.courses[0]?.course_id || ''
+              createProgress(tech,level, firstCourse);
+              setFirstLesson(false);
+            
             }
           } catch (error) {
             console.error("Error loading courses", error);
@@ -298,7 +315,7 @@ export default function HomeScreen() {
         };
         fetchCourses();
     }
-  }, [languages, selectedLang, onboardingStep]);
+  }, [languages, selectedLang, onboardingStep,user]);
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],

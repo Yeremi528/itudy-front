@@ -46,8 +46,10 @@ export type User = {
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
+  setUser: (user:any) => void;
   signIn: () => Promise<void>;
   signOut: () => void;
+  updateUserData: (updates: Partial<User>) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -76,6 +78,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     loadStorageData();
   }, []);
 
+  const updateUserData = async (updates: Partial<User>) => {
+    if (!user) return;
+
+    // Creamos el nuevo objeto de usuario combinando el actual con los cambios
+    const updatedUser = { ...user, ...updates };
+
+    // A. Actualizamos el estado de React (para que la UI cambie ya)
+    setUser(updatedUser);
+
+    // B. Actualizamos la persistencia (para que al recargar se mantenga)
+    try {
+      await AsyncStorage.setItem('@user', JSON.stringify(updatedUser));
+    } catch (e) {
+      console.error("Error guardando actualización de usuario", e);
+    }
+  };
   useEffect(() => {
     console.log("Respuesta de Google Auth:", response);
     if (response?.type === 'success') {
@@ -159,7 +177,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user,setUser,updateUserData, isLoading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
