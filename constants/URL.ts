@@ -1,0 +1,1 @@
+export const URL_BASE = "https://itudy-947017986235.southamerica-west1.run.app"

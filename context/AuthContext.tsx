@@ -1,4 +1,5 @@
 // context/AuthContext.tsx
+import { URL_BASE } from '@/constants/URL';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { makeRedirectUri } from 'expo-auth-session'; // <--- IMPORTANTE
@@ -123,14 +124,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsLoading(false);
     }
   }
-
+  
   async function handleBackendLogin(token: string) {
     try {
       // Ajuste de IP: localhost para Web, 10.0.2.2 para Android
       // NOTA: Asegúrate de que tu backend esté corriendo en el puerto 4518
       const apiUrl = Platform.OS === 'android' 
         ? 'http://10.0.2.2:4518' 
-        : 'http://localhost:4518';
+        : `${URL_BASE}`;
 
       console.log(`Enviando token a: ${apiUrl}/oauth/google/login`);
 

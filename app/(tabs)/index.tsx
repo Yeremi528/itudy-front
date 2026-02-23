@@ -31,6 +31,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, Path, Pattern, Rect, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
+import { URL_BASE } from "@/constants/URL";
 import { useAuth } from '../../context/AuthContext';
 
 // --- INTERFACES ---
@@ -122,7 +123,7 @@ export default function HomeScreen() {
       try {
           setIsInitialLoading(true);
           // API del Screenshot
-          const response = await axios.get(`http://0.0.0.0:4518/courses?lang=${langCodeLower}`);
+          const response = await axios.get(`${URL_BASE}/courses?lang=${langCodeLower}`);
           if (response.data) {
               setTechOptions(response.data);
               setOnboardingStep(2); 
@@ -188,7 +189,7 @@ export default function HomeScreen() {
 
   const fetchLanguage = async () => {
     try {
-      const response = await axios.get("http://localhost:4518/courses/languages");
+      const response = await axios.get(`${URL_BASE}/courses/languages`);
       if (response.data && response.data.length > 0) {
           setLanguages(response.data);
       } else {
@@ -204,7 +205,7 @@ export default function HomeScreen() {
     if (!user?.id) return;
     const [tech, level] = user?.courses_info?.active?.split('_') || [];
     try {
-      const PROGRESS_URL = `http://0.0.0.0:4518/lessons?userID=${user?.id}&courseID=${tech}_${level}`;
+      const PROGRESS_URL = `${URL_BASE}/lessons?userID=${user?.id}&courseID=${tech}_${level}`;
       const response = await axios.get(PROGRESS_URL); 
       if (response.data) {
         setProgress(response.data);
@@ -220,7 +221,7 @@ export default function HomeScreen() {
 
     try {
       // OJO: 0.0.0.0 no suele funcionar en Android Emulator, usa 10.0.2.2 o tu IP local
-      const UPDATE_PROGRESS_URL = `http://0.0.0.0:4518/user`; 
+      const UPDATE_PROGRESS_URL = `${URL_BASE}/user`; 
 
       const newCoursesInfo = {
           active: `${tech}_${level}`,
@@ -249,7 +250,7 @@ export default function HomeScreen() {
     if (!firstLesson) return;
 
     try {
-      const CREATE_PROGRESS_URL = `http://0.0.0.0:4518/lessons`;
+      const CREATE_PROGRESS_URL = `${URL_BASE}/lessons`;
 
       console.log(firstCourse,"first Course")
       const firstLesson = {
@@ -295,7 +296,7 @@ export default function HomeScreen() {
           const languagesCodeLower = selectedLang?.code.toLowerCase() || 'es';
           try {
             const [tech, level] = user?.courses_info?.active?.split('_') || [];
-            const API_URL = `http://0.0.0.0:4518/courses/byID?lv=${level}&lang=${languagesCodeLower}&tech=${tech}`; 
+            const API_URL = `${URL_BASE}/courses/byID?lv=${level}&lang=${languagesCodeLower}&tech=${tech}`; 
             const response = await axios.get(API_URL); 
             if (response.data && response.data.courses) {
                 setData(response.data.courses);

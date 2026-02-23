@@ -1,3 +1,4 @@
+import { URL_BASE } from "@/constants/URL";
 import axios from "axios";
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -78,7 +79,7 @@ export default function LessonScreen() {
   
   const updateLessonProgress = async (lessonID: string,courseID:string, userID: string) => {
     try {
-        const UPDATE_URL = `http://0.0.0.0:4518/lessons?userID=${userID}&courseID=${courseID}&lessonID=${lessonID}&nextID=${nextLessonId}`;
+        const UPDATE_URL = `${URL_BASE}/lessons?userID=${userID}&courseID=${courseID}&lessonID=${lessonID}&nextID=${nextLessonId}`;
         await axios.put(UPDATE_URL);
     }catch (error) {
         console.error("Error actualizando progreso de lección:", error);
@@ -92,7 +93,7 @@ export default function LessonScreen() {
         const lessonId = params.id;
 
         // Ajusta tu IP si es necesario (ej: 192.168.1.XX para celular físico)
-        const API_URL = `http://0.0.0.0:4518/courses/${lessonId}/content`; 
+        const API_URL = `${URL_BASE}/courses/${lessonId}/content`; 
 
         const response = await axios.get(API_URL);
 

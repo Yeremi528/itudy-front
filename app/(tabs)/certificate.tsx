@@ -1,3 +1,4 @@
+import { URL_BASE } from '@/constants/URL';
 import { useAuth } from '@/context/AuthContext';
 import axios from 'axios';
 import { Award, Calendar, CheckCircle, ChevronDown, ChevronRight, X } from 'lucide-react-native';
@@ -55,7 +56,7 @@ const CertificatesScreen: React.FC = () => {
     if (!user?.id) return;
     try {
         // Ajusta la IP según corresponda (localhost para iOS, 10.0.2.2 para Android)
-        const URL = `http://localhost:4518/assignments?userID=${user.id}`;
+        const URL = `${URL_BASE}/assignments?userID=${user.id}`;
         console.log("Fetching My Assignments:", URL);
         
         const { data } = await axios.get(URL);
@@ -111,7 +112,7 @@ const CertificatesScreen: React.FC = () => {
     const tech = `${selectedCourse?.courseID}`.toLowerCase();
     const level = `${selectedCourse?.level}`.toLowerCase();
 
-    const URL = `http://localhost:4518/assignments/availables?tech=${tech}&level=${level}`;
+    const URL = `${URL_BASE}/assignments/availables?tech=${tech}&level=${level}`;
     
     try {
       const { data } = await axios.get(URL);
@@ -138,7 +139,7 @@ const CertificatesScreen: React.FC = () => {
   };
 
   const confirmBooking = async () => {
-    const URL = `http://localhost:4518/assignments`;
+    const URL = `${URL_BASE}/assignments`;
 
     const data = {
       userID: user?.id,
