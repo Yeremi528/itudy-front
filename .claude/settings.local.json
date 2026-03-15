@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx expo:*)",
+      "Bash(npx tsc:*)",
+      "Read(//Users/yeremias/Desktop/itudy-back/courses/**)",
+      "Read(//Users/yeremias/Desktop/itudy-back/assigments/**)",
+      "Bash(which eas:*)",
+      "Bash(eas whoami:*)",
+      "Bash(java -version)",
+      "Read(//Users/yeremias/Library/Android/sdk/**)",
+      "Bash(xcodebuild -version)",
+      "Bash(xcode-select -p)",
+      "Read(//Applications/**)",
+      "Bash(xcodebuild -showsdks)",
+      "Bash(echo \"ANDROID_HOME: $ANDROID_HOME\" && echo \"ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT\" && ls ~/Library/Android/sdk/build-tools/ 2>/dev/null)",
+      "Bash(eas build:*)",
+      "Bash(eas build:view 42f4d356-c36e-4995-9851-ba24df3d6237 2>&1)",
+      "Bash(curl -L \"https://expo.dev/artifacts/eas/9gxJRe8Jvr8LpfZMWppdee.apk\" -o \"/Users/yeremias/Desktop/itudy-android.apk\" --progress-bar)",
+      "Read(//Users/yeremias/Desktop/**)",
+      "Bash(eas credentials:*)",
+      "Bash(eas build:view c724fb8a-b6b3-49fb-a547-857d06b0773d 2>&1)",
+      "Bash(sleep 300 && eas build:view c724fb8a-b6b3-49fb-a547-857d06b0773d 2>&1)"
+    ]
+  }
+}

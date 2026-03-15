@@ -41,6 +41,7 @@ interface Language {
   name: string;
   flag: string;
   isActive: boolean;
+  tech_stack?: string[]; // <--- Añadido tech_stack
 }
 
 interface TechCourse {
@@ -96,6 +97,7 @@ export default function HomeScreen() {
   const [languages, setLanguages] = useState<Language[]>([]); 
   const [selectedLang, setSelectedLang] = useState<Language | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isTechModalVisible, setIsTechModalVisible] = useState(false); // <--- Modal Tech
   const [data, setData] = useState<any[]>([]);
   const [nextID, setNextID] = useState("");
 
@@ -139,35 +141,22 @@ export default function HomeScreen() {
     const levelLower = level.toLowerCase().trim();
     const techLower = tech.toLowerCase().trim();
 
+    const successAction = () => {
+        updateUserProgress(techLower, levelLower);
+        setOnboardingStep(0); 
+    };
 
-    if (levelLower === 'junior') {
-        // Lógica de éxito para JUNIOR
-        
-        const successAction = () => {
-            updateUserProgress(techLower, levelLower);
-            setOnboardingStep(0); 
-            
-        };
-
-        if (Platform.OS === 'web') {
-            // SOLUCIÓN PARA WEB: Usamos window.confirm nativo del navegador
-            // window.confirm devuelve true si el usuario da "Aceptar"
-            const userAccepted = window.confirm(`¡Bienvenido! Comenzando ruta ${tech} nivel Junior`);
-            if (userAccepted) {
-                successAction();
-            }
-        } else {
-            // SOLUCIÓN PARA MÓVIL (iOS/Android): Tu Alert original
-            Alert.alert("¡Bienvenido!", `Comenzando ruta ${tech} nivel Junior`, [
-                { 
-                    text: "Dale con todo", 
-                    onPress: successAction
-                }
-            ]);
+    if (Platform.OS === 'web') {
+        const userAccepted = window.confirm(`¡Bienvenido! Comenzando ruta ${tech} nivel ${level}`);
+        if (userAccepted) {
+            successAction();
         }
-
-    } // Agregar else con redirreción
-};
+    } else {
+        Alert.alert("¡Bienvenido!", `Comenzando ruta ${tech} nivel ${level}`, [
+            { text: "Dale con todo", onPress: successAction }
+        ]);
+    }
+  };
   // --- FUNCIONES EXISTENTES (MAPA) ---
   const goToLesson = (ID: string, nextID: string) => {
     const [tech, level] = user?.courses_info?.active?.split('_') || [];
@@ -192,6 +181,22 @@ export default function HomeScreen() {
       const response = await axios.get(`${URL_BASE}/courses/languages`);
       if (response.data && response.data.length > 0) {
           setLanguages(response.data);
+          
+          // Buscar el idioma que el usuario está cursando, si lo tiene
+          const activeTech = user?.courses_info?.active?.split('_')[0] || '';
+          
+          if (activeTech) {
+            // Buscamos un idioma cuyo tech_stack incluya la tecnología activa
+            const langConTech = response.data.find((l: Language) => l.tech_stack && l.tech_stack.includes(activeTech));
+            if (langConTech) {
+                setSelectedLang(langConTech);
+            } else {
+                setSelectedLang(response.data[0]);
+            }
+          } else {
+              setSelectedLang(response.data[0]);
+          }
+
       } else {
           console.warn("La API devolvió un array vacío");
       }
@@ -201,7 +206,6 @@ export default function HomeScreen() {
   }
 
   const fetchProgress = async () => {
-    
     if (!user?.id) return;
     const [tech, level] = user?.courses_info?.active?.split('_') || [];
     try {
@@ -209,23 +213,30 @@ export default function HomeScreen() {
       const response = await axios.get(PROGRESS_URL); 
       if (response.data) {
         setProgress(response.data);
+      } else {
+        setProgress(null);
       }
     } catch (error) {
       console.error("Error updating progress", error);
+      setProgress(null);
     }
   };
 
   const updateUserProgress = async (tech: string, level: string) => {
     if (!user?.id) return;
-    if (!firstLesson) return; // Asumo que esto viene de props o estado local
 
     try {
-      // OJO: 0.0.0.0 no suele funcionar en Android Emulator, usa 10.0.2.2 o tu IP local
       const UPDATE_PROGRESS_URL = `${URL_BASE}/user`; 
+      const courseId = `${tech}_${level}`;
+
+      // Preservar la lista existente y añadir el nuevo curso si no existe
+      const existingList = user.courses_info?.list || [];
+      const alreadyInList = existingList.some((c: any) => c.id === courseId);
+      const newList = alreadyInList ? existingList : [...existingList, { id: courseId }];
 
       const newCoursesInfo = {
-          active: `${tech}_${level}`,
-          list: [{ id: `${tech}_${level}` }] // Asegúrate de manejar la lógica de agregar a la lista, no reemplazarla toda si ya tenías cursos
+          active: courseId,
+          list: newList
       };
 
       const payload = {
@@ -237,14 +248,61 @@ export default function HomeScreen() {
       await axios.put(UPDATE_PROGRESS_URL, payload);
 
       // 2. Actualizar en Contexto Global + AsyncStorage
-      // Aquí solo pasas la parte que cambió
       await updateUserData({ courses_info: newCoursesInfo as any }); 
       
+      // 3. Forzar que se cree el progreso inicial si es un curso nuevo
+      if (!alreadyInList) {
+          setFirstLesson(true);
+      }
 
   } catch (error) {
     console.log("Error updating user progress", error);
   }
 }
+  const getStreakMessage = (days: number): string => {
+    if (days >= 100) return `¡${days} días en llamas! Leyenda pura`;
+    if (days >= 30) return `¡${days} días de racha! Un mes imparable`;
+    if (days >= 14) return `¡${days} días! Dos semanas seguidas`;
+    if (days >= 7) return `¡${days} días! Una semana épica 🔥`;
+    if (days >= 3) return `¡${days} días de racha! Construyendo el hábito`;
+    if (days === 1) return `¡Hoy arrancaste tu racha!`;
+    return `¡${days} días de racha!`;
+  };
+
+  const updateStreak = async () => {
+    if (!user?.id) return;
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const lastLoginStr = user.stats?.last_login_at
+      ? new Date(user.stats.last_login_at).toISOString().split('T')[0]
+      : null;
+
+    // Ya se contó hoy, no hacer nada
+    if (lastLoginStr === todayStr) return;
+
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    // Si fue ayer → racha consecutiva; si no → empezar de 1
+    const newStreak = lastLoginStr === yesterdayStr
+      ? (user.stats?.streak_days ?? 0) + 1
+      : 1;
+
+    try {
+      const newStats = {
+        ...(user.stats || {}),
+        streak_days: newStreak,
+        last_login_at: now.toISOString(),
+      };
+      await axios.put(`${URL_BASE}/user`, { id: user.id, stats: newStats });
+      await updateUserData({ stats: newStats as any });
+    } catch (error) {
+      console.error("Error updating streak:", error);
+    }
+  };
+
   const createProgress = async (tech:string,level:string, firstCourse:string) => {
     if (!user?.id) return;
     if (!firstLesson) return;
@@ -271,7 +329,10 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-        if (onboardingStep === 0)   fetchProgress();
+        if (onboardingStep === 0) {
+          fetchProgress();
+          updateStreak();
+        }
     }, [onboardingStep,data])
   );
 
@@ -450,10 +511,27 @@ export default function HomeScreen() {
                 <ChevronDown color="#38bdf8" size={12} />
             </TouchableOpacity>
             
+            {/* Botón Selección de Stack (Ej. Golang -> Node) */}
+            <TouchableOpacity 
+                style={[styles.langButton, { marginLeft: 10, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)' }]}
+                onPress={() => setIsTechModalVisible(true)}
+            >
+                <Cpu color="#3b82f6" size={14} />
+                <Text style={styles.langText}>
+                  {(user?.courses_info?.active?.split('_')[0] || 'Stack').toUpperCase()}
+                </Text>
+                <ChevronDown color="#3b82f6" size={12} />
+            </TouchableOpacity>
+
             <View style={styles.statsContainer}>
                 <View style={styles.statItem}>
                     <Flame color="#f97316" fill="#f97316" size={16} />
-                    <Text style={[styles.statText, { color: '#f97316' }]}>12</Text>
+                    <Text style={[styles.statText, { color: '#f97316' }]}>
+                      {user?.stats?.streak_days ?? 0}
+                    </Text>
+                    <Text style={{ color: '#fb923c', fontSize: 11, fontWeight: '600' }}>
+                      {(user?.stats?.streak_days ?? 0) === 1 ? 'día' : 'días'}
+                    </Text>
                 </View>
             </View>
 
@@ -492,6 +570,62 @@ export default function HomeScreen() {
                     </View>
                 </TouchableOpacity>
             </Modal>
+
+            {/* Modal Selección de Stack (Tech) */}
+            <Modal
+                visible={isTechModalVisible}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setIsTechModalVisible(false)}
+            >
+                <TouchableOpacity 
+                    style={styles.modalOverlay} 
+                    activeOpacity={1} 
+                    onPress={() => setIsTechModalVisible(false)}
+                >
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHandlel} />
+                        <Text style={styles.modalTitle}>Cambiar de Stack</Text>
+                        
+                        {/* Iterar sobre las tecnologías disponibles del idioma seleccionado */}
+                        {selectedLang?.tech_stack && selectedLang.tech_stack.length > 0 ? (
+                            selectedLang.tech_stack.map((tech) => {
+                                const currentActiveTech = user?.courses_info?.active?.split('_')[0] || '';
+                                const isSelected = currentActiveTech.toLowerCase() === tech.toLowerCase();
+
+                                return (
+                                    <TouchableOpacity
+                                        key={tech}
+                                        style={[
+                                            styles.langOption,
+                                            isSelected && styles.langOptionSelected
+                                        ]}
+                                        onPress={() => {
+                                            if (!isSelected) {
+                                              // Llamamos fetchTechByLang simulando que el usuario inició onboarding pero ya dentro del idioma
+                                              // o directamente actualizamos para empezar de 0 (pero requerimos el nivel también)
+                                              setIsTechModalVisible(false);
+                                              // Queremos que elija el nivel, así que lo mandamos al onboarding paso 2 pero con este idioma
+                                              fetchTechByLang(selectedLang.code);
+                                            }
+                                        }}
+                                    >
+                                        <Cpu color={isSelected ? "#38bdf8" : "#94a3b8"} size={24} style={{ marginRight: 15 }} />
+                                        <Text style={styles.optionText}>
+                                            {tech.charAt(0).toUpperCase() + tech.slice(1)}
+                                        </Text>
+                                        {isSelected && <View style={styles.checkDot} />}
+                                    </TouchableOpacity>
+                                );
+                            })
+                        ) : (
+                            <Text style={{color: '#94a3b8', textAlign: 'center', padding: 20}}>
+                                No hay stacks disponibles para este idioma.
+                            </Text>
+                        )}
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </View>
 
         {/* MAPA DE CURSOS (Mismo código original) */}
@@ -501,7 +635,26 @@ export default function HomeScreen() {
                 <Cpu size={12} color="#22d3ee" />
                 <Text style={styles.subTitle}>RUTA BACKEND</Text>
             </View>
-            <Text style={styles.mainTitle}>Golang Mastery</Text>
+            <Text style={styles.mainTitle}>
+                {user?.courses_info?.active?.split('_')[0]
+                    ? user.courses_info.active.split('_')[0].charAt(0).toUpperCase() + user.courses_info.active.split('_')[0].slice(1)
+                    : 'Golang'} Mastery
+            </Text>
+            {user?.courses_info?.active?.split('_')[1] && (
+              <View style={styles.levelBadge}>
+                <Text style={styles.levelBadgeText}>
+                  Nivel · {user.courses_info.active.split('_')[1].charAt(0).toUpperCase() + user.courses_info.active.split('_')[1].slice(1)}
+                </Text>
+              </View>
+            )}
+            {(user?.stats?.streak_days ?? 0) > 0 && (
+              <View style={styles.streakBanner}>
+                <Flame color="#f97316" fill="#f97316" size={13} />
+                <Text style={styles.streakBannerText}>
+                  {getStreakMessage(user!.stats.streak_days)}
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.mapContainer}>
@@ -983,5 +1136,37 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 16,
     letterSpacing: 1
-  }
+  },
+  levelBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 100,
+    marginTop: 10,
+  },
+  levelBadgeText: {
+    color: '#93c5fd',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  streakBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    backgroundColor: 'rgba(249, 115, 22, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(249, 115, 22, 0.3)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 100,
+  },
+  streakBannerText: {
+    color: '#fb923c',
+    fontSize: 12,
+    fontWeight: '600',
+  },
 });

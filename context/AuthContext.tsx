@@ -1,55 +1,70 @@
 // context/AuthContext.tsx
 import { URL_BASE } from '@/constants/URL';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GoogleSignin, isErrorWithCode, statusCodes } from '@react-native-google-signin/google-signin';
 import axios from 'axios';
-import { makeRedirectUri } from 'expo-auth-session'; // <--- IMPORTANTE
+import { makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
-// 1. Esto maneja el cierre de la ventana emergente en Web
+// Necesario para que el flujo web cierre correctamente la ventana de autenticación
 WebBrowser.maybeCompleteAuthSession();
+
+const WEB_CLIENT_ID = '947017986235-hjvh14vf1mnh04drpnpvapav5bh2oqh7.apps.googleusercontent.com';
+const ANDROID_CLIENT_ID = '947017986235-okt104uig6sboi6330rqivb3ut67lnrb.apps.googleusercontent.com';
+const IOS_CLINET_ID = '947017986235-q4l1k276dnidd7nqi2j0sd1cngd1jm3s.apps.googleusercontent.com'
 
 type UserStats = {
   total_xp: number;
   streak_days: number;
   current_league: string;
+  last_login_at?: string;
+};
+
+export type Achievement = {
+  id: string;
+  title: string;
+  exam_name: string;
+  earned_at: string;
 };
 
 export type EnrolledCourse = {
-  id: string;          
-  name?: string;       
-  progress?: number;   
+  id: string;
+  name?: string;
+  progress?: number;
   is_completed?: boolean;
+  tech?: string;
+  level?: string;
 };
 
 export type UserCoursesInfo = {
-  active: string;            
-  list: EnrolledCourse[];    
+  active: string;
+  list: EnrolledCourse[];
 };
 
-// Define el usuario completo basándonos en tu captura de MongoDB
 export type User = {
-  id: string;           // MongoDB siempre devuelve un _id
+  id: string;
   name: string;
   email: string;
-  picture?: string;      // Opcional: Google la da, pero tu DB aún no la guarda en la captura
-  token?: string;        // Opcional: Para tus peticiones al backend (si el backend lo devuelve aparte)
-  
+  picture?: string;
+  image_url?: string;
+  token?: string;
   courses_info: UserCoursesInfo;
-  
   country: string;
   native_language: string;
   created_at: string;
-  stats: UserStats;     
+  stats: UserStats;
+  achievements?: Achievement[];
 };
+
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
   setUser: (user:any) => void;
   signIn: () => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   updateUserData: (updates: Partial<User>) => Promise<void>;
 };
 
@@ -61,56 +76,58 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 2. Configuración de la URL de redirección
-  // Esto ayuda a que Google sepa exactamente a qué dirección de localhost volver
-  const redirectUri = makeRedirectUri({
-    scheme: 'itudy', // Asegúrate de que esto coincida con el "scheme" en tu app.json si tienes uno
-  });
-
+  // Hook Web: Debe declararse en el nivel superior, sin importar la plataforma
+  const redirectUri = makeRedirectUri({ scheme: 'itudy' });
   const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: '947017986235-hjvh14vf1mnh04drpnpvapav5bh2oqh7.apps.googleusercontent.com',
-    androidClientId: '947017986235-94u6n6mdkbsgvlg2kdkkqcphd4g46j6n.apps.googleusercontent.com',
-    redirectUri: redirectUri, // <--- Añadimos esto explícitamente
-    scopes: ['openid','profile', 'email'],
+    webClientId: WEB_CLIENT_ID,
+    androidClientId: ANDROID_CLIENT_ID,
+    iosClientId: IOS_CLINET_ID,
+    redirectUri: redirectUri,
+    scopes: ['openid', 'profile', 'email'],
     responseType: 'id_token',
   });
 
   useEffect(() => {
+    // Configuración Nativa (Solo Android e iOS)
+    if (Platform.OS !== 'web') {
+      GoogleSignin.configure({
+        webClientId: WEB_CLIENT_ID, // Siempre se usa el Web ID para obtener el idToken para el backend
+        iosClientId: IOS_CLINET_ID, // Añadido soporte explícito para iOS
+      });
+    }
     loadStorageData();
   }, []);
 
   const updateUserData = async (updates: Partial<User>) => {
     if (!user) return;
-
-    // Creamos el nuevo objeto de usuario combinando el actual con los cambios
     const updatedUser = { ...user, ...updates };
-
-    // A. Actualizamos el estado de React (para que la UI cambie ya)
     setUser(updatedUser);
-
-    // B. Actualizamos la persistencia (para que al recargar se mantenga)
     try {
       await AsyncStorage.setItem('@user', JSON.stringify(updatedUser));
     } catch (e) {
       console.error("Error guardando actualización de usuario", e);
     }
   };
+
+  // Efecto para procesar la respuesta de la Web
   useEffect(() => {
-    console.log("Respuesta de Google Auth:", response);
-    if (response?.type === 'success') {
-      // En el flujo moderno, a veces viene en authentication o params
-      const { id_token } = response.params;
-      const { authentication } = response;
+    if (Platform.OS === 'web' && response?.type === 'success') {
+      console.log("Respuesta Web de Google Auth:", response);
+      const idToken = response.params.id_token || response.authentication?.idToken || response.authentication?.accessToken;
       
-      // Intentamos obtener el token de cualquiera de las dos formas
-      const tokenToUse = id_token || authentication?.accessToken;
-      console.log("entramos aqui con token:", tokenToUse);
-      if (tokenToUse) {
-        handleBackendLogin(tokenToUse);
+      if (idToken) {
+        handleBackendLogin(idToken);
+      } else {
+        console.error("Error Web: No se recibió ningún token de Google");
       }
-    } else if (response?.type === 'error') {
-      console.error("Error Auth Session:", response.error);
-      alert("Error al iniciar sesión con Google");
+    } else if (Platform.OS === 'web' && response?.type === 'error') {
+      console.error("Error en Auth Session Web:", response.error);
+      alert("Error al iniciar sesión con Google en la web.");
+    }
+    
+    // Si la promesa web terminó, apagamos el loader
+    if (response) {
+      setIsLoading(false);
     }
   }, [response]);
 
@@ -127,25 +144,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   
   async function handleBackendLogin(token: string) {
     try {
-      // Ajuste de IP: localhost para Web, 10.0.2.2 para Android
-      // NOTA: Asegúrate de que tu backend esté corriendo en el puerto 4518
+      setIsLoading(true);
       const apiUrl = Platform.OS === 'android' 
-        ? 'http://10.0.2.2:4518' 
+        ? `${URL_BASE}` 
         : `${URL_BASE}`;
 
       console.log(`Enviando token a: ${apiUrl}/oauth/google/login`);
 
       const { data } = await axios.post(
-        `${apiUrl}/oauth/google/login`, // 1. URL
-        {},                             // 2. Body (lo dejamos vacío {} si ahora todo va en el header)
-        {                               // 3. Configuración (Headers)
+        `${apiUrl}/oauth/google/login`,
+        {},
+        {
           headers: {
             Authorization: `${token}` 
           }
         }
       );
       
-      // Adaptamos por si tu backend devuelve el usuario dentro de un objeto o directo
       const userData = data.user || data;
       
       if (!userData) throw new Error("No se recibieron datos del usuario");
@@ -155,30 +170,75 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     } catch (error) {
       console.error("Error en login backend:", error);
-      // Mostramos el error específico si existe
       if (axios.isAxiosError(error) && error.response) {
         console.error("Detalle del error:", error.response.data);
       }
       alert("Error al conectar con el servidor. Revisa la consola.");
+    } finally {
+      setIsLoading(false);
     }
   }
 
   const signIn = async () => {
-    // Usamos opciones específicas para intentar evitar bloqueos
-    await promptAsync({
-      showInRecents: true,
-      // En web, si esto sigue fallando, a veces ayuda no pasar windowFeatures
-      // pero por ahora lo dejamos estándar.
-    });
+    setIsLoading(true);
+    try {
+      if (Platform.OS === 'web') {
+        // FLUJO WEB
+        await promptAsync();
+        // El resto se maneja en el useEffect(..., [response])
+      } else {
+        // FLUJO NATIVO (Android / iOS)
+        await GoogleSignin.hasPlayServices();
+        await GoogleSignin.signIn();
+        
+        const tokens = await GoogleSignin.getTokens();
+        
+        if (tokens.idToken) {
+          console.log("Token nativo obtenido, enviando a backend...");
+          await handleBackendLogin(tokens.idToken);
+        } else {
+          throw new Error("No se recibió el idToken nativo de Google.");
+        }
+      }
+    } catch (error) {
+      console.error("Error en signIn:", error);
+      setIsLoading(false); // Detenemos el loader en caso de error
+      
+      if (Platform.OS !== 'web' && isErrorWithCode(error)) {
+        switch (error.code) {
+          case statusCodes.SIGN_IN_CANCELLED:
+            console.log("El usuario canceló el inicio de sesión");
+            break;
+          case statusCodes.IN_PROGRESS:
+            console.log("El inicio de sesión ya está en progreso");
+            break;
+          case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+            alert("Los servicios de Google Play no están disponibles o están desactualizados.");
+            break;
+          default:
+            alert("Error desconocido al iniciar sesión nativa con Google.");
+        }
+      }
+    }
   };
 
   const signOut = async () => {
-    setUser(null);
-    await AsyncStorage.removeItem('@user');
+    setIsLoading(true);
+    try {
+      if (Platform.OS !== 'web') {
+        await GoogleSignin.signOut();
+      }
+      setUser(null);
+      await AsyncStorage.removeItem('@user');
+    } catch (error) {
+      console.error("Error al cerrar sesión:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user,setUser,updateUserData, isLoading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, setUser, updateUserData, isLoading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
